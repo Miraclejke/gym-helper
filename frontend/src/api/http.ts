@@ -1,0 +1,68 @@
+export const AUTH_EXPIRED_EVENT = 'gymhelper:auth-expired';
+
+function notifyAuthExpired() {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent(AUTH_EXPIRED_EVENT));
+  }
+}
+
+async function readErrorMessage(response: Response) {
+  try {
+    const payload = (await response.json()) as {
+      message?: string | string[];
+      error?: string;
+    };
+
+    if (Array.isArray(payload.message)) {
+      return payload.message.join(', ');
+    }
+
+    if (typeof payload.message === 'string' && payload.message.trim()) {
+      return payload.message;
+    }
+
+    if (typeof payload.error === 'string' && payload.error.trim()) {
+      return payload.error;
+    }
+  } catch {}
+
+  return `Request failed with status ${response.status}.`;
+}
+
+export async function requestJson<T>(
+  path: string,
+  init?: RequestInit
+): Promise<T> {
+  const response = await fetch(path, {
+    credentials: 'include',
+    ...init,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(init?.headers ?? {}),
+    },
+  });
+
+  if (!response.ok) {
+    if (response.status === 401) {
+      notifyAuthExpired();
+    }
+
+    throw new Error(await readErrorMessage(response));
+  }
+
+  if (response.status === 204) {
+    return undefined as T;
+  }
+
+  const contentType = response.headers.get('content-type') ?? '';
+  if (!contentType.includes('application/json')) {
+    return undefined as T;
+  }
+
+  const text = await response.text();
+  if (!text.trim()) {
+    return null as T;
+  }
+
+  return JSON.parse(text) as T;
+}
